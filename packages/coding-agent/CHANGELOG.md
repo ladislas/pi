@@ -6,6 +6,10 @@
 
 - Added Together AI to built-in provider setup, `/login` API-key auth, and default model resolution ([#3624](https://github.com/earendil-works/pi-mono/pull/3624) by [@Nutlope](https://github.com/Nutlope)).
 
+### Changed
+
+- Published npm installs now include an `npm-shrinkwrap.json` to lock transitive dependencies and platform-specific optional packages.
+
 ### Fixed
 
 - Fixed theme sharing across package scopes so extensions do not crash with `Theme not initialized` ([#4333](https://github.com/earendil-works/pi/issues/4333)).
