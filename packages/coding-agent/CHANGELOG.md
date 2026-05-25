@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed `httpIdleTimeoutMs` to apply to OpenAI Codex Responses WebSocket idle waits as well as HTTP fetch body/header idleness ([#4945](https://github.com/earendil-works/pi/issues/4945)).
 - Fixed `RpcClient` to reject pending requests and consume stdin pipe errors when the child process exits unexpectedly ([#4764](https://github.com/earendil-works/pi/issues/4764)).
 - Fixed managed npm extension updates to avoid package managers installing or resolving pi host packages as peer dependencies ([#4907](https://github.com/earendil-works/pi/issues/4907)).
 - Fixed RPC mode raw stdout writes to retry transient backpressure errors and flush queued protocol output during shutdown ([#4897](https://github.com/earendil-works/pi/issues/4897)).

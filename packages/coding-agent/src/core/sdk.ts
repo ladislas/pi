@@ -340,11 +340,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				throw new Error(auth.error);
 			}
 			const providerRetrySettings = settingsManager.getProviderRetrySettings();
+			const timeoutMs =
+				options?.timeoutMs ??
+				providerRetrySettings.timeoutMs ??
+				(model.api === "openai-codex-responses" ? settingsManager.getHttpIdleTimeoutMs() : undefined);
 			const attributionHeaders = getAttributionHeaders(model, settingsManager, options?.sessionId);
 			return streamSimple(model, context, {
 				...options,
 				apiKey: auth.apiKey,
-				timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
+				timeoutMs,
 				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
 				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
 				headers:

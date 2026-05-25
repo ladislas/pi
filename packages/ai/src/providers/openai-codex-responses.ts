@@ -121,6 +121,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 	});
 }
 
+function normalizeTimeoutMs(value: number | undefined): number | undefined {
+	if (value === undefined) return undefined;
+	if (!Number.isFinite(value) || value < 0) {
+		throw new Error(`Invalid timeoutMs: ${String(value)}`);
+	}
+	return Math.floor(value);
+}
+
 // ============================================================================
 // Main Stream Function
 // ============================================================================
@@ -173,6 +181,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 				websocketRequestId,
 			);
 			const bodyJson = JSON.stringify(body);
+			const idleTimeoutMs = normalizeTimeoutMs(options?.timeoutMs);
 			const transport = options?.transport || "auto";
 			const websocketDisabledForSession = transport !== "sse" && isWebSocketSseFallbackActive(options?.sessionId);
 			if (websocketDisabledForSession) {
@@ -192,6 +201,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
 						() => {
 							websocketStarted = true;
 						},
+						idleTimeoutMs,
 						options,
 					);
 
@@ -811,7 +821,12 @@ function scheduleSessionWebSocketExpiry(sessionId: string, entry: CachedWebSocke
 	}, SESSION_WEBSOCKET_CACHE_TTL_MS);
 }
 
-async function connectWebSocket(url: string, headers: Headers, signal?: AbortSignal): Promise<WebSocketLike> {
+async function connectWebSocket(
+	url: string,
+	headers: Headers,
+	signal?: AbortSignal,
+	idleTimeoutMs?: number,
+): Promise<WebSocketLike> {
 	const WebSocketCtor = await getWebSocketConstructor();
 	if (!WebSocketCtor) {
 		throw new Error("WebSocket transport is not available in this runtime");
@@ -822,6 +837,7 @@ async function connectWebSocket(url: string, headers: Headers, signal?: AbortSig
 
 	return new Promise<WebSocketLike>((resolve, reject) => {
 		let settled = false;
+		let timeout: ReturnType<typeof setTimeout> | undefined;
 		let socket: WebSocketLike;
 
 		try {
@@ -831,6 +847,25 @@ async function connectWebSocket(url: string, headers: Headers, signal?: AbortSig
 			return;
 		}
 
+		const cleanup = () => {
+			if (timeout) {
+				clearTimeout(timeout);
+				timeout = undefined;
+			}
+			socket.removeEventListener("open", onOpen);
+			socket.removeEventListener("error", onError);
+			socket.removeEventListener("close", onClose);
+			signal?.removeEventListener("abort", onAbort);
+		};
+		const fail = (error: Error, closeReason?: string) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			if (closeReason) {
+				closeWebSocketSilently(socket, 1000, closeReason);
+			}
+			reject(error);
+		};
 		const onOpen: WebSocketListener = () => {
 			if (settled) return;
 			settled = true;
@@ -838,38 +873,28 @@ async function connectWebSocket(url: string, headers: Headers, signal?: AbortSig
 			resolve(socket);
 		};
 		const onError: WebSocketListener = (event) => {
-			const error = extractWebSocketError(event);
-			if (settled) return;
-			settled = true;
-			cleanup();
-			reject(error);
+			fail(extractWebSocketError(event));
 		};
 		const onClose: WebSocketListener = (event) => {
-			const error = extractWebSocketCloseError(event);
-			if (settled) return;
-			settled = true;
-			cleanup();
-			reject(error);
+			fail(extractWebSocketCloseError(event));
 		};
 		const onAbort = () => {
-			if (settled) return;
-			settled = true;
-			cleanup();
-			socket.close(1000, "aborted");
-			reject(new Error("Request was aborted"));
-		};
-
-		const cleanup = () => {
-			socket.removeEventListener("open", onOpen);
-			socket.removeEventListener("error", onError);
-			socket.removeEventListener("close", onClose);
-			signal?.removeEventListener("abort", onAbort);
+			fail(new Error("Request was aborted"), "aborted");
 		};
 
 		socket.addEventListener("open", onOpen);
 		socket.addEventListener("error", onError);
 		socket.addEventListener("close", onClose);
 		signal?.addEventListener("abort", onAbort);
+
+		if (idleTimeoutMs !== undefined && idleTimeoutMs > 0) {
+			timeout = setTimeout(() => {
+				fail(new Error(`WebSocket connect timeout after ${idleTimeoutMs}ms`), "connect_timeout");
+			}, idleTimeoutMs);
+		}
+		if (signal?.aborted) {
+			onAbort();
+		}
 	});
 }
 
@@ -878,6 +903,7 @@ async function acquireWebSocket(
 	headers: Headers,
 	sessionId: string | undefined,
 	signal?: AbortSignal,
+	idleTimeoutMs?: number,
 ): Promise<{
 	socket: WebSocketLike;
 	entry?: CachedWebSocketConnection;
@@ -885,7 +911,7 @@ async function acquireWebSocket(
 	release: (options?: { keep?: boolean }) => void;
 }> {
 	if (!sessionId) {
-		const socket = await connectWebSocket(url, headers, signal);
+		const socket = await connectWebSocket(url, headers, signal, idleTimeoutMs);
 		return {
 			socket,
 			reused: false,
@@ -923,7 +949,7 @@ async function acquireWebSocket(
 			};
 		}
 		if (cached.busy) {
-			const socket = await connectWebSocket(url, headers, signal);
+			const socket = await connectWebSocket(url, headers, signal, idleTimeoutMs);
 			return {
 				socket,
 				reused: false,
@@ -938,7 +964,7 @@ async function acquireWebSocket(
 		}
 	}
 
-	const socket = await connectWebSocket(url, headers, signal);
+	const socket = await connectWebSocket(url, headers, signal, idleTimeoutMs);
 	const entry: CachedWebSocketConnection = { socket, busy: true };
 	websocketSessionCache.set(sessionId, entry);
 	return {
@@ -1017,7 +1043,11 @@ async function decodeWebSocketData(data: unknown): Promise<string | null> {
 	return null;
 }
 
-async function* parseWebSocket(socket: WebSocketLike, signal?: AbortSignal): AsyncGenerator<Record<string, unknown>> {
+async function* parseWebSocket(
+	socket: WebSocketLike,
+	signal?: AbortSignal,
+	idleTimeoutMs?: number,
+): AsyncGenerator<Record<string, unknown>> {
 	const queue: Record<string, unknown>[] = [];
 	let pending: (() => void) | null = null;
 	let done = false;
@@ -1097,8 +1127,23 @@ async function* parseWebSocket(socket: WebSocketLike, signal?: AbortSignal): Asy
 				continue;
 			}
 			if (done) break;
-			await new Promise<void>((resolve) => {
+			let timeout: ReturnType<typeof setTimeout> | undefined;
+			await new Promise<void>((resolve, reject) => {
 				pending = resolve;
+				if (idleTimeoutMs !== undefined && idleTimeoutMs > 0) {
+					timeout = setTimeout(() => {
+						const error = new Error(`WebSocket idle timeout after ${idleTimeoutMs}ms`);
+						failed = error;
+						done = true;
+						pending = null;
+						closeWebSocketSilently(socket, 1000, "idle_timeout");
+						reject(error);
+					}, idleTimeoutMs);
+				}
+			}).finally(() => {
+				if (timeout) {
+					clearTimeout(timeout);
+				}
 			});
 		}
 
@@ -1195,9 +1240,16 @@ async function processWebSocketStream(
 	stream: AssistantMessageEventStream,
 	model: Model<"openai-codex-responses">,
 	onStart: () => void,
+	idleTimeoutMs: number | undefined,
 	options?: OpenAICodexResponsesOptions,
 ): Promise<void> {
-	const { socket, entry, reused, release } = await acquireWebSocket(url, headers, options?.sessionId, options?.signal);
+	const { socket, entry, reused, release } = await acquireWebSocket(
+		url,
+		headers,
+		options?.sessionId,
+		options?.signal,
+		idleTimeoutMs,
+	);
 	let keepConnection = true;
 	const useCachedContext = options?.transport === "websocket-cached" || options?.transport === "auto";
 	// ChatGPT Codex Responses rejects `store: true` ("Store must be set to false").
@@ -1226,7 +1278,7 @@ async function processWebSocketStream(
 		socket.send(JSON.stringify({ type: "response.create", ...requestBody }));
 		await processResponsesStream(
 			startWebSocketOutputOnFirstEvent(
-				mapCodexEvents(parseWebSocket(socket, options?.signal)),
+				mapCodexEvents(parseWebSocket(socket, options?.signal, idleTimeoutMs)),
 				output,
 				stream,
 				onStart,

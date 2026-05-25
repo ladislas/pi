@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed OpenAI Codex Responses WebSocket streams to honor the request timeout as an idle timeout instead of waiting indefinitely when no events arrive ([#4945](https://github.com/earendil-works/pi/issues/4945)).
+
 ## [0.75.5] - 2026-05-23
 
 ### Breaking Changes
