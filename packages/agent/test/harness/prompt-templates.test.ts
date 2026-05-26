@@ -87,4 +87,17 @@ describe("formatPromptTemplateInvocation", () => {
 			"hello world test hello world test",
 		);
 	});
+
+	it("substitutes raw command arguments", () => {
+		const content = "$RAW_ARGUMENTS\n$ARGUMENTS";
+		expect(formatPromptTemplateInvocation({ name: "one", content }, ["hello", "world"], "hello\nworld")).toBe(
+			"hello\nworld\nhello world",
+		);
+	});
+
+	it("preserves replace replacement patterns in raw command arguments", () => {
+		expect(formatPromptTemplateInvocation({ name: "one", content: "$RAW_ARGUMENTS" }, [], "$$ $& $` $'")).toBe(
+			"$$ $& $` $'",
+		);
+	});
 });

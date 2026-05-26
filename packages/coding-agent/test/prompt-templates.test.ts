@@ -25,6 +25,14 @@ import {
 // ============================================================================
 
 describe("substituteArgs", () => {
+	test("should replace $RAW_ARGUMENTS with the raw argument string", () => {
+		expect(substituteArgs("Test: $RAW_ARGUMENTS", ["a", "b", "c"], "a  b\n c")).toBe("Test: a  b\n c");
+	});
+
+	test("should preserve replace replacement patterns in raw arguments", () => {
+		expect(substituteArgs("Test: $RAW_ARGUMENTS", [], "$$ $& $` $'")).toBe("Test: $$ $& $` $'");
+	});
+
 	test("should replace $ARGUMENTS with all args joined", () => {
 		expect(substituteArgs("Test: $ARGUMENTS", ["a", "b", "c"])).toBe("Test: a b c");
 	});
@@ -43,6 +51,7 @@ describe("substituteArgs", () => {
 		expect(substituteArgs("$ARGUMENTS", ["$1", "$ARGUMENTS"])).toBe("$1 $ARGUMENTS");
 		expect(substituteArgs("$@", ["$100", "$1"])).toBe("$100 $1");
 		expect(substituteArgs("$ARGUMENTS", ["$100", "$1"])).toBe("$100 $1");
+		expect(substituteArgs("$RAW_ARGUMENTS", [], "$1 $ARGUMENTS $@")).toBe("$1 $ARGUMENTS $@");
 	});
 
 	test("should support mixed $1, $2, and $ARGUMENTS", () => {
@@ -378,6 +387,62 @@ describe("parseCommandArgs", () => {
 // ============================================================================
 
 describe("expandPromptTemplate", () => {
+	test("should preserve raw multiline arguments", () => {
+		const result = expandPromptTemplate("/arg-test label-2\n\nHere is some description #2.", [
+			{
+				name: "arg-test",
+				description: "test",
+				content: `raw: $RAW_ARGUMENTS\njoined: $ARGUMENTS`,
+				sourceInfo: { path: "/tmp/arg-test.md", source: "local", scope: "temporary", origin: "top-level" },
+				filePath: "/tmp/arg-test.md",
+			},
+		]);
+
+		expect(result).toBe("raw: label-2\n\nHere is some description #2.\njoined: label-2 Here is some description #2.");
+	});
+
+	test("should preserve raw spacing after the command separator", () => {
+		const result = expandPromptTemplate("/arg-test   keep spacing", [
+			{
+				name: "arg-test",
+				description: "test",
+				content: "$RAW_ARGUMENTS",
+				sourceInfo: { path: "/tmp/arg-test.md", source: "local", scope: "temporary", origin: "top-level" },
+				filePath: "/tmp/arg-test.md",
+			},
+		]);
+
+		expect(result).toBe("  keep spacing");
+	});
+
+	test("should treat CRLF after the template name as one separator", () => {
+		const result = expandPromptTemplate("/arg-test\r\nkeep spacing", [
+			{
+				name: "arg-test",
+				description: "test",
+				content: "$RAW_ARGUMENTS",
+				sourceInfo: { path: "/tmp/arg-test.md", source: "local", scope: "temporary", origin: "top-level" },
+				filePath: "/tmp/arg-test.md",
+			},
+		]);
+
+		expect(result).toBe("keep spacing");
+	});
+
+	test("should support non-ASCII whitespace after the template name", () => {
+		const result = expandPromptTemplate("/arg-test\u00A0keep spacing", [
+			{
+				name: "arg-test",
+				description: "test",
+				content: "$RAW_ARGUMENTS",
+				sourceInfo: { path: "/tmp/arg-test.md", source: "local", scope: "temporary", origin: "top-level" },
+				filePath: "/tmp/arg-test.md",
+			},
+		]);
+
+		expect(result).toBe("keep spacing");
+	});
+
 	test("should split template arguments on unquoted newlines", () => {
 		const result = expandPromptTemplate("/arg-test label-2\n\nHere is some description #2.", [
 			{

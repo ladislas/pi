@@ -640,6 +640,7 @@ export class AgentHarness<
 			const turnState = await this.createTurnState();
 			const template = (turnState.resources.promptTemplates ?? []).find((candidate) => candidate.name === name);
 			if (!template) throw new AgentHarnessError("invalid_argument", `Unknown prompt template: ${name}`);
+			// This API receives parsed args only, so $RAW_ARGUMENTS falls back to args.join(" ").
 			return await this.executeTurn(turnState, formatPromptTemplateInvocation(template, args));
 		} catch (error) {
 			this.phase = "idle";
