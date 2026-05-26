@@ -95,9 +95,15 @@ describe("formatPromptTemplateInvocation", () => {
 		);
 	});
 
-	it("preserves replace replacement patterns in raw command arguments", () => {
+	it("preserves String.replace replacement patterns in raw command arguments", () => {
 		expect(formatPromptTemplateInvocation({ name: "one", content: "$RAW_ARGUMENTS" }, [], "$$ $& $` $'")).toBe(
 			"$$ $& $` $'",
+		);
+	});
+
+	it("preserves String.replace replacement patterns in joined command arguments", () => {
+		expect(formatPromptTemplateInvocation({ name: "one", content: "$ARGUMENTS\n$@" }, ["$$", "$&", "$`", "$'"])).toBe(
+			"$$ $& $` $'\n$$ $& $` $'",
 		);
 	});
 });

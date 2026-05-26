@@ -29,8 +29,13 @@ describe("substituteArgs", () => {
 		expect(substituteArgs("Test: $RAW_ARGUMENTS", ["a", "b", "c"], "a  b\n c")).toBe("Test: a  b\n c");
 	});
 
-	test("should preserve replace replacement patterns in raw arguments", () => {
+	test("should preserve String.replace replacement patterns in raw arguments", () => {
 		expect(substituteArgs("Test: $RAW_ARGUMENTS", [], "$$ $& $` $'")).toBe("Test: $$ $& $` $'");
+	});
+
+	test("should preserve String.replace replacement patterns in joined arguments", () => {
+		expect(substituteArgs("Test: $ARGUMENTS", ["$$", "$&", "$`", "$'"])).toBe("Test: $$ $& $` $'");
+		expect(substituteArgs("Test: $@", ["$$", "$&", "$`", "$'"])).toBe("Test: $$ $& $` $'");
 	});
 
 	test("should replace $ARGUMENTS with all args joined", () => {

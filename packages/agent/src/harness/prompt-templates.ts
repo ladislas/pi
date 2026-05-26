@@ -246,7 +246,7 @@ export function parseCommandArgs(argsString: string): string[] {
 }
 
 /** Substitute prompt template placeholders (`$1`, `$@`, `$ARGUMENTS`, `$RAW_ARGUMENTS`, `${@:N}`, `${@:N:L}`) with command arguments. */
-export function substituteArgs(content: string, args: string[], rawArgs = args.join(" ")): string {
+export function substituteArgs(content: string, args: string[], rawArgs?: string): string {
 	let result = content;
 	result = result.replace(/\$(\d+)/g, (_, num: string) => args[parseInt(num, 10) - 1] ?? "");
 	result = result.replace(/\$\{@:(\d+)(?::(\d+))?\}/g, (_, startStr: string, lengthStr?: string) => {
@@ -256,9 +256,10 @@ export function substituteArgs(content: string, args: string[], rawArgs = args.j
 		return args.slice(start).join(" ");
 	});
 	const allArgs = args.join(" ");
-	result = result.replace(/\$ARGUMENTS/g, allArgs);
-	result = result.replace(/\$@/g, allArgs);
-	result = result.replace(/\$RAW_ARGUMENTS/g, () => rawArgs);
+	const effectiveRawArgs = rawArgs ?? allArgs;
+	result = result.replace(/\$ARGUMENTS/g, () => allArgs);
+	result = result.replace(/\$@/g, () => allArgs);
+	result = result.replace(/\$RAW_ARGUMENTS/g, () => effectiveRawArgs);
 	return result;
 }
 

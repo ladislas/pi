@@ -66,7 +66,7 @@ export function parseCommandArgs(argsString: string): string[] {
  * Note: Replacement happens on the template string only. Argument values
  * containing patterns like $1, $@, or $ARGUMENTS are NOT recursively substituted.
  */
-export function substituteArgs(content: string, args: string[], rawArgs = args.join(" ")): string {
+export function substituteArgs(content: string, args: string[], rawArgs?: string): string {
 	let result = content;
 
 	// Replace $1, $2, etc. with positional args FIRST (before wildcards)
@@ -92,15 +92,16 @@ export function substituteArgs(content: string, args: string[], rawArgs = args.j
 
 	// Pre-compute all args joined (optimization)
 	const allArgs = args.join(" ");
+	const effectiveRawArgs = rawArgs ?? allArgs;
 
 	// Replace $ARGUMENTS with all args joined (new syntax, aligns with Claude, Codex, OpenCode)
-	result = result.replace(/\$ARGUMENTS/g, allArgs);
+	result = result.replace(/\$ARGUMENTS/g, () => allArgs);
 
 	// Replace $@ with all args joined (existing syntax)
-	result = result.replace(/\$@/g, allArgs);
+	result = result.replace(/\$@/g, () => allArgs);
 
 	// Replace $RAW_ARGUMENTS with the unparsed argument string LAST to avoid recursive substitution
-	result = result.replace(/\$RAW_ARGUMENTS/g, () => rawArgs);
+	result = result.replace(/\$RAW_ARGUMENTS/g, () => effectiveRawArgs);
 
 	return result;
 }
